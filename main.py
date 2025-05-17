@@ -1,10 +1,12 @@
 import os.path
+from idlelib.zoomheight import set_window_geometry
+
 import fitz
 import edge_tts
 import asyncio
 import threading
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
 
 
 class PdfToSpeech:
@@ -15,6 +17,8 @@ class PdfToSpeech:
         self.window.geometry("600x600")
         self.file_name = ""
         self.book = ""
+        self.voices = {"English": "en-US-GuyNeural",
+                       "Ukraine": "uk-UA-OstapNeural"}
 
         # UI
         # Open dialog and file frame
@@ -53,6 +57,12 @@ class PdfToSpeech:
         self.save_button.config(state="disabled")
         self.save_button.pack(side="right")
 
+        # Choose voice combobox
+        self.combo_box = ttk.Combobox(self.bottom_frame, values=self.receive_voices_names())
+        self.combo_box.set("Select voice")
+        self.combo_box.config(state="disabled")
+        self.combo_box.pack(side="right", padx=5)
+
 
     def truncate_filename(self, filepath, max_length=30):
         """
@@ -64,11 +74,19 @@ class PdfToSpeech:
         filename = os.path.basename(filepath)
         return filename if len(filename) <= max_length else filename[:max_length - 3] + "..."
 
+    def receive_voices_names(self):
+        """
+        Make list of keys from self.voices for voice Combobox
+        :return: list of keys
+        """
+        return [key for key, value in self.voices.items()]
+
     def open_file(self):
         """
         Open PDF file and save into self.book as text
         :return: nothing
         """
+        self.book = ""
         try:
             # Take file path
             filepath = filedialog.askopenfilename(
@@ -87,10 +105,17 @@ class PdfToSpeech:
             for page in doc:
                 self.book += page.get_text()
 
+            # Show preview
+            self.text_preview.config(state="normal")
+            self.text_preview.delete("1.0", "end")
+            self.text_preview.insert("1.0", self.book)
+            self.text_preview.config(state="disabled")
+
             # Change label and buttons
             self.file_name_label.config(text=f"File name: {self.file_name}")
             self.save_button.config(state="normal")
             self.play_button.config(state="normal")
+            self.combo_box.config(state="normal")
 
         except Exception as e:
            messagebox.showerror(f"Error: {e}")
@@ -111,12 +136,15 @@ class PdfToSpeech:
             filepath = os.path.join(folder_path, f"{self.file_name}_new.mp3")
 
         try:
+            self.combo_box.config(state="disabled")
             self.save_button.config(state="disabled", text="Saving...")
+            self.open_file_button.config(state="disabled")
             # Check empty book
             if not self.book.strip():
                 raise ValueError("Book is empty. Please load file first.")
-            #  Save file
-            tts = edge_tts.Communicate(text=self.book, voice="uk-UA-OstapNeural")
+            # Save file
+            voice = self.voices[f"{self.combo_box.get()}"] # Voice choose
+            tts = edge_tts.Communicate(text=self.book, voice=voice)
             await tts.save(filepath)
 
             messagebox.showinfo("Good news", f"Your book {self.file_name} was saved into audio folder")
@@ -126,6 +154,7 @@ class PdfToSpeech:
 
         finally:
             self.save_button.config(state="normal", text="Save file")
+            self.open_file_button.config(state="normal")
 
     def run_async_save_to_mp3(self):
         """
