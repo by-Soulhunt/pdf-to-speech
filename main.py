@@ -1,8 +1,8 @@
 import os.path
-
 import fitz
 import edge_tts
 import asyncio
+import threading
 import tkinter as tk
 from tkinter import messagebox, filedialog
 
@@ -17,9 +17,7 @@ class PdfToSpeech:
         self.book = ""
 
         # UI
-
         # Open dialog and file frame
-
         # Openfile Button
         self.open_file_button = tk.Button(self.window, text="Open PDF File", font=("Calibri", 18, "bold"),
                                           command=self.open_file)
@@ -38,6 +36,7 @@ class PdfToSpeech:
         self.text_preview.config(state="disabled")
         self.text_preview.pack(fill="x", pady=10)
 
+
         # Bottom buttons frame
         self.bottom_frame = tk.Frame(self.window)
         self.bottom_frame.pack(fill="x")
@@ -50,11 +49,18 @@ class PdfToSpeech:
 
         # Save button
         self.save_button = tk.Button(self.bottom_frame, text="Save file", font=("Calibri", 18, "bold"),
-                                          command=self.open_file)
+                                          command=self.run_async_save_to_mp3)
         self.save_button.config(state="disabled")
         self.save_button.pack(side="right")
 
+
     def truncate_filename(self, filepath, max_length=30):
+        """
+        Truncate file name to 30 chars to avoid long name
+        :param filepath: path of file
+        :param max_length: static param, length of name
+        :return: str, processed filename
+        """
         filename = os.path.basename(filepath)
         return filename if len(filename) <= max_length else filename[:max_length - 3] + "..."
 
@@ -81,11 +87,53 @@ class PdfToSpeech:
             for page in doc:
                 self.book += page.get_text()
 
-            # Change label
+            # Change label and buttons
             self.file_name_label.config(text=f"File name: {self.file_name}")
+            self.save_button.config(state="normal")
+            self.play_button.config(state="normal")
 
         except Exception as e:
            messagebox.showerror(f"Error: {e}")
+
+
+    async def save_to_mp3(self):
+        """
+        Save audio .mp3 into /audio folder
+        :return: nothing
+        """
+        # Make correct folder path
+        folder_path = os.path.join(os.getcwd(), "audio")
+        # Check if folder exist
+        os.makedirs(folder_path, exist_ok=True)
+        # Create full path
+        filepath = os.path.join(folder_path, f"{self.file_name}.mp3")
+        if os.path.exists(filepath):
+            filepath = os.path.join(folder_path, f"{self.file_name}_new.mp3")
+
+        try:
+            self.save_button.config(state="disabled", text="Saving...")
+            # Check empty book
+            if not self.book.strip():
+                raise ValueError("Book is empty. Please load file first.")
+            #  Save file
+            tts = edge_tts.Communicate(text=self.book, voice="uk-UA-OstapNeural")
+            await tts.save(filepath)
+
+            messagebox.showinfo("Good news", f"Your book {self.file_name} was saved into audio folder")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Something goes wrong: \n {e}")
+
+        finally:
+            self.save_button.config(state="normal", text="Save file")
+
+    def run_async_save_to_mp3(self):
+        """
+        Wrapper for the asynchronous save_to_mp3 function. Required for binding to a button save_button.
+        :return: nothing
+        """
+        threading.Thread(target=lambda: asyncio.run(self.save_to_mp3())).start()
+
 
 
 if __name__ == "__main__":
