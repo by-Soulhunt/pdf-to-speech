@@ -1,6 +1,4 @@
 import os.path
-from idlelib.zoomheight import set_window_geometry
-
 import fitz
 import edge_tts
 import asyncio
@@ -14,7 +12,7 @@ class PdfToSpeech:
         self.window = window
         self.window.title("PDF to speech APP")
         self.window.config(padx=20, pady=20)
-        self.window.geometry("600x600")
+        self.window.geometry("600x610")
         self.file_name = ""
         self.book = ""
         self.voices = {"English": "en-US-GuyNeural",
@@ -45,12 +43,6 @@ class PdfToSpeech:
         self.bottom_frame = tk.Frame(self.window)
         self.bottom_frame.pack(fill="x")
 
-        # Play button
-        self.play_button = tk.Button(self.bottom_frame, text="Play file", font=("Calibri", 18, "bold"),
-                                          command=self.open_file)
-        self.play_button.config(state="disabled")
-        self.play_button.pack(side="left")
-
         # Save button
         self.save_button = tk.Button(self.bottom_frame, text="Save file", font=("Calibri", 18, "bold"),
                                           command=self.run_async_save_to_mp3)
@@ -62,6 +54,14 @@ class PdfToSpeech:
         self.combo_box.set("Select voice")
         self.combo_box.config(state="disabled")
         self.combo_box.pack(side="right", padx=5)
+
+        # Progress bar
+        self.progress = ttk.Progressbar(self.bottom_frame, orient="horizontal", length=400, mode="determinate")
+        self.progress.pack(side="right", pady=10)
+
+        # Progress bar percent
+        self.percent_progress = tk.Label(text="")
+        self.percent_progress.pack(side="left")
 
 
     def truncate_filename(self, filepath, max_length=30):
@@ -114,7 +114,6 @@ class PdfToSpeech:
             # Change label and buttons
             self.file_name_label.config(text=f"File name: {self.file_name}")
             self.save_button.config(state="normal")
-            self.play_button.config(state="normal")
             self.combo_box.config(state="normal")
 
         except Exception as e:
@@ -132,6 +131,7 @@ class PdfToSpeech:
         os.makedirs(folder_path, exist_ok=True)
         # Create full path
         filepath = os.path.join(folder_path, f"{self.file_name}.mp3")
+        # Check if the file already exists
         if os.path.exists(filepath):
             filepath = os.path.join(folder_path, f"{self.file_name}_new.mp3")
 
@@ -142,10 +142,28 @@ class PdfToSpeech:
             # Check empty book
             if not self.book.strip():
                 raise ValueError("Book is empty. Please load file first.")
-            # Save file
-            voice = self.voices[f"{self.combo_box.get()}"] # Voice choose
-            tts = edge_tts.Communicate(text=self.book, voice=voice)
-            await tts.save(filepath)
+            # Voice choose
+            voice = self.voices[f"{self.combo_box.get()}"]
+            # Create async generator
+            communicate = edge_tts.Communicate(text=self.book, voice=voice)
+            stream = communicate.stream()
+
+            # Progress bar
+            temp_chunks = []
+
+            async for chunk in stream:
+                if chunk["type"] == "audio":
+                    temp_chunks.append(chunk["data"])
+
+            total_chunks = len(temp_chunks) # 100% for progress bar
+
+            # Write into file
+            with open(filepath, "wb") as f:
+                for i, data in enumerate(temp_chunks, start=1):
+                    f.write(data)
+                    # Update progress
+                    percent = int((i / total_chunks) * 100)
+                    self.window.after(0, self.update_progress, percent)
 
             messagebox.showinfo("Good news", f"Your book {self.file_name} was saved into audio folder")
 
@@ -155,6 +173,19 @@ class PdfToSpeech:
         finally:
             self.save_button.config(state="normal", text="Save file")
             self.open_file_button.config(state="normal")
+            self.combo_box.config(state="normal")
+            self.update_progress(0)
+            self.percent_progress.config(text="")
+
+    def update_progress(self, percent):
+        """
+        Update progress bar and percent label
+        :param percent: current percent status
+        :return:
+        """
+        self.progress["value"] = percent
+        self.percent_progress.config(text=f"Saving progress: {percent}%")
+        self.window.update_idletasks()
 
     def run_async_save_to_mp3(self):
         """
@@ -162,6 +193,7 @@ class PdfToSpeech:
         :return: nothing
         """
         threading.Thread(target=lambda: asyncio.run(self.save_to_mp3())).start()
+
 
 
 
